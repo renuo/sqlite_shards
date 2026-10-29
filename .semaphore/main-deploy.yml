@@ -1,0 +1,19 @@
+version: v1.0
+name: main-deploy
+agent:
+  machine:
+    type: f1-standard-2
+    os_image: ubuntu2404
+
+blocks:
+  - name: main-deploy
+    task:
+      secrets:
+        - name: rubygems-deploy
+      jobs:
+        - name: main-deploy
+          commands:
+            - sem-version ruby 4.0 -f
+            - checkout --use-cache
+            - gem build sqlite_shards
+            - gem push sqlite_shards-*.gem
