@@ -88,7 +88,6 @@ module SqliteShards
         connection_class_for_self.send(:with_schema_database) { super() }
       end
     end
-    private :load_schema
 
     def clear_database_connections
       @database_lock.synchronize do

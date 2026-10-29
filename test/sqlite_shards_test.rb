@@ -172,6 +172,15 @@ class SqliteShardsTest < ActiveSupport::TestCase
     assert_equal ["Theirs"], theirs.pluck(:title)
   end
 
+  # Rails calls it on every model when it eager loads, before any file is connected.
+  test "load_schema stays public and works without a file" do
+    NotesRecord.with_database(@path) { Note.reset_column_information }
+
+    Note.load_schema
+
+    assert_equal ["id", "title", "body"], Note.column_names
+  end
+
   test "columns are known outside with_database, while queries still raise" do
     NotesRecord.with_database(@path) { Note.reset_column_information }
 
