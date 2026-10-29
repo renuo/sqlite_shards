@@ -10,7 +10,7 @@ Gem::Specification.new do |spec|
   spec.description = "Include SqliteShards in an abstract Active Record class and its models read and write the " \
     "SQLite file you pass to with_database, each file a shard of its own, migrated on first use."
   spec.license = "MIT"
-  spec.required_ruby_version = ">= 3.2"
+  spec.required_ruby_version = ">= 3.3"
 
   spec.metadata["homepage_uri"] = spec.homepage
   spec.metadata["source_code_uri"] = spec.homepage
