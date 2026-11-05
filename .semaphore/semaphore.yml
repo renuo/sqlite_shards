@@ -11,8 +11,8 @@ auto_cancel:
 global_job_config:
   prologue:
     commands:
-      - sem-version ruby $RUBY_VERSION -f
       - checkout --use-cache
+      - sem-version ruby $RUBY_VERSION -f
       - cache restore gems-$RUBY_VERSION-$(checksum Gemfile.lock)
       - bundle config set path 'vendor/bundle'
       - bundle install -j 4
@@ -44,5 +44,7 @@ blocks:
           commands:
             - bin/check
 promotions:
-  - name: main
-    pipeline_file: main-deploy.yml
+  - name: release
+    pipeline_file: release.yml
+    auto_promote:
+      when: "result = 'passed' and tag =~ '^[0-9]+[.][0-9]+[.][0-9]+$'"
