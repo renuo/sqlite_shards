@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0
 
 - At most `max_open_databases` files (100 by default) stay connected: connecting one more closes every file no thread
   is using. Before, every file kept its connection pool, file descriptors and page cache for the life of the process.
