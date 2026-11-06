@@ -230,9 +230,9 @@ class SqliteShardsTest < ActiveSupport::TestCase
 
   def open_databases
     ActiveRecord::Base.connection_handler.connection_pool_list(:writing)
-      .select { it.connection_descriptor.name == NotesRecord.name }
-      .map { it.db_config.database }
-      .reject { it == ":memory:" }
+      .select { |pool| pool.connection_descriptor.name == NotesRecord.name }
+      .map { |pool| pool.db_config.database }
+      .reject { |database| database == ":memory:" }
   end
 
   def user_version

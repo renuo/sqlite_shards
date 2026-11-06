@@ -147,7 +147,7 @@ module SqliteShards
 
       @database_lock.synchronize do
         unless @database_shards.include?(shard)
-          close_idle_databases if @database_shards.count { it != SCHEMA_SHARD } >= max_open_databases
+          close_idle_databases if @database_shards.count { |shard| shard != SCHEMA_SHARD } >= max_open_databases
           pool = connection_handler.establish_connection(
             {adapter: "sqlite3", database: path, timeout: CONNECTION_TIMEOUT},
             owner_name: self, role: ActiveRecord.writing_role, shard: shard
