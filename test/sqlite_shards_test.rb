@@ -37,6 +37,7 @@ class SqliteShardsTest < ActiveSupport::TestCase
   end
 
   teardown do
+    NotesRecord.max_open_databases = nil
     NotesRecord.clear_database_connections
     FileUtils.remove_entry(@temp_dir) if File.directory?(@temp_dir)
   end
@@ -148,6 +149,29 @@ class SqliteShardsTest < ActiveSupport::TestCase
     assert_empty NotesRecord.with_database(@path) { Note.pluck(:title) }
   end
 
+  test "connecting one file more than the limit closes the idle ones" do
+    NotesRecord.max_open_databases = 2
+    paths = 3.times.map { |i| File.join(@temp_dir, i.to_s, "notes.db") }
+    paths.each { |path| NotesRecord.with_database(path) { Note.create!(title: path) } }
+
+    assert_equal [paths.last], open_databases
+    assert_equal [paths.first], NotesRecord.with_database(paths.first) { Note.pluck(:title) }
+  end
+
+  test "a file in use stays open past the limit" do
+    NotesRecord.max_open_databases = 1
+    other_path = File.join(@temp_dir, "other", "notes.db")
+
+    titles = NotesRecord.with_database(@path) do
+      Note.create!(title: "Outer")
+      NotesRecord.with_database(other_path) { Note.create!(title: "Inner") }
+      Note.pluck(:title)
+    end
+
+    assert_equal ["Outer"], titles
+    assert_equal [@path, other_path].sort, open_databases.sort
+  end
+
   test "a bound relation can be kept, chained and written through outside a block" do
     notes = NotesRecord.bound_to(@path) { Note.order(:title) }
 
@@ -202,6 +226,13 @@ class SqliteShardsTest < ActiveSupport::TestCase
   def prepare_path
     FileUtils.mkdir_p(File.dirname(@path))
     @path
+  end
+
+  def open_databases
+    ActiveRecord::Base.connection_handler.connection_pool_list(:writing)
+      .select { |pool| pool.connection_descriptor.name == NotesRecord.name }
+      .map { |pool| pool.db_config.database }
+      .reject { |database| database == ":memory:" }
   end
 
   def user_version

@@ -31,8 +31,11 @@ require_relative "sqlite_shards/bound"
 #   note.update!(title: "Hi")
 #
 # Each file is a shard of the class, connected on first use. A file deleted or replaced since (a purged or renamed
-# directory, say) has another inode and so a shard of its own: the old shard's idle connections are reaped, and a
-# connection in use, like a test transaction's, is never pulled away.
+# directory, say) has another inode and so a shard of its own.
+#
+# Every open file costs a connection pool, a few file descriptors and SQLite's page cache, so the files open at once
+# are limited (max_open_databases, 100 by default). Connecting one more closes every file no thread is using:
+# a connection in use, like a test transaction's, is never pulled away.
 #
 # Migrations are blocks run in order, tracked by SQLite's user_version: append new ones, never edit or reorder
 # shipped ones.
@@ -44,6 +47,7 @@ module SqliteShards
   class UnavailableError < Error; end
 
   CONNECTION_TIMEOUT = 5_000
+  MAX_OPEN_DATABASES = 100
 
   included do
     self.connection_class = true
@@ -51,6 +55,7 @@ module SqliteShards
 
     @database_migrations = []
     @database_shards = Set.new
+    @database_users = Hash.new(0)
     @database_lock = Mutex.new
   end
 
@@ -62,6 +67,10 @@ module SqliteShards
       @database_migrations = migrations
     end
 
+    attr_writer :max_open_databases
+
+    def max_open_databases = @max_open_databases || MAX_OPEN_DATABASES
+
     # Without create, a file that does not exist yields nothing and returns nil.
     def with_database(path, create: true, &)
       path = ::File.expand_path(path.to_s)
@@ -71,7 +80,12 @@ module SqliteShards
         return
       end
 
-      connected_to(role: ActiveRecord.writing_role, shard: database_shard(path), &)
+      shard = database_shard(path)
+      begin
+        connected_to(role: ActiveRecord.writing_role, shard: shard, &)
+      ensure
+        @database_lock.synchronize { @database_users.delete(shard) if (@database_users[shard] -= 1).zero? }
+      end
     end
 
     def bound_to(path, &scope)
@@ -133,16 +147,39 @@ module SqliteShards
 
       @database_lock.synchronize do
         unless @database_shards.include?(shard)
+          close_idle_databases if @database_shards.count { |shard| shard != SCHEMA_SHARD } >= max_open_databases
           pool = connection_handler.establish_connection(
             {adapter: "sqlite3", database: path, timeout: CONNECTION_TIMEOUT},
             owner_name: self, role: ActiveRecord.writing_role, shard: shard
           )
-          pool.with_connection { |connection| migrate_database(connection) }
+          begin
+            pool.with_connection { |connection| migrate_database(connection) }
+          rescue
+            connection_handler.remove_connection_pool(connection_specification_name,
+              role: ActiveRecord.writing_role, shard: shard)
+            raise
+          end
           @database_shards << shard
         end
+        # Counted while the lock is held, so the shard cannot be closed between here and connected_to.
+        @database_users[shard] += 1
       end
 
       shard
+    end
+
+    def close_idle_databases
+      @database_shards.delete_if do |shard|
+        next false if shard == SCHEMA_SHARD || @database_users.key?(shard)
+
+        pool = connection_handler.retrieve_connection_pool(connection_specification_name,
+          role: ActiveRecord.writing_role, shard: shard)
+        next false if pool && pool.stat[:busy].positive?
+
+        connection_handler.remove_connection_pool(connection_specification_name, role: ActiveRecord.writing_role,
+          shard: shard)
+        true
+      end
     end
 
     # Transactions are IMMEDIATE, so the version is read under the write lock and

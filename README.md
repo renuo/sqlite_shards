@@ -77,6 +77,8 @@ The records it returns are wrappers that forward every call, so `note.class` is 
   creating it. Useful for reading without leaving empty databases behind.
 - `NotesRecord.transaction { ... }` inside `with_database` spans all models of that file: they share one connection.
 - `with_database` calls nest, for the same class or different ones.
+- `NotesRecord.max_open_databases = 20` limits the files connected at once (100 by default). Connecting one more
+  closes every file no thread is using.
 - `clear_database_connections` closes every connection the class opened.
 
 ## Requirements
